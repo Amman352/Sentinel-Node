@@ -1,1 +1,36 @@
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# ML model files (binary, no point tracking)
+*.pkl
+*.joblib
+
+# Environment variables — NEVER commit these
+.env
+.env.local
+.env.production
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# VS Code
+.vscode/
+
+# Supabase local
+.supabase/
