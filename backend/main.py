@@ -29,28 +29,34 @@ app.add_middleware(
 
 @app.post("/api/ingest-log")
 async def ingest_log(request: Request):
-    """
-    Receives Clerk webhook on every login.
-    Full pipeline: parse → store → ML → SOAR → respond
-    """
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return {"status": "error", "message": "invalid JSON"}
+
     event_type = body.get("type", "")
+    print(f"[ingest] Received event: {event_type}")
 
     if event_type not in ("session.created", "user.created"):
         return {"status": "ignored", "event": event_type}
 
     data = body.get("data", {})
-    clerk_user_id = data.get("user_id") or data.get("id", "unknown")
+    clerk_user_id = (
+        data.get("user_id") or
+        data.get("id") or
+        "test_user"
+    )
+    print(f"[ingest] clerk_user_id={clerk_user_id}")
 
-    # Handle new user signup
     if event_type == "user.created":
         emails = data.get("email_addresses", [])
         email = emails[0].get("email_address", "") if emails else ""
-        if not get_user_by_clerk_id(clerk_user_id):
-            insert_user(clerk_user_id, email)
+        if clerk_user_id != "test_user":
+            if not get_user_by_clerk_id(clerk_user_id):
+                insert_user(clerk_user_id, email)
         return {"status": "user_created"}
 
-    # Handle login event — full pipeline
+    # session.created — full pipeline
     ip_address = (
         request.headers.get("x-forwarded-for", "").split(",")[0].strip()
         or "unknown"
@@ -58,13 +64,11 @@ async def ingest_log(request: Request):
     device = request.headers.get("user-agent", "unknown")[:200]
     login_hour = datetime.now(timezone.utc).hour
 
-    # Get or create user
     user = get_user_by_clerk_id(clerk_user_id)
     if not user:
         user = insert_user(clerk_user_id, "")
     user_id = user["id"]
 
-    # Compute features from login history
     recent = get_recent_logs(user_id, limit=5)
     past_ips = {log["ip_address"] for log in recent if log.get("ip_address")}
     past_devices = {log["device"] for log in recent if log.get("device")}
@@ -74,7 +78,6 @@ async def ingest_log(request: Request):
     attempts_last_hour = len(recent) + 1
     location_changed = 0
 
-    # Insert login log (risk_score null until ML responds)
     log_row = insert_login_log({
         "user_id":            user_id,
         "ip_address":         ip_address,
@@ -87,7 +90,6 @@ async def ingest_log(request: Request):
     })
     log_id = log_row.get("id")
 
-    # Call ML service
     risk_score = 0.1
     verdict = "normal"
     try:
@@ -110,11 +112,9 @@ async def ingest_log(request: Request):
     except Exception as e:
         print(f"[ingest] ML unreachable: {e}")
 
-    # Update log row with score
     if log_id:
         update_risk_score(log_id, risk_score)
 
-    # Run SOAR
     reason = (f"score={risk_score}, ip_changed={ip_changed}, "
               f"new_device={new_device}, attempts={attempts_last_hour}, "
               f"hour={login_hour}")
