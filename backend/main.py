@@ -143,3 +143,8 @@ def get_alerts(limit: int = 10):
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "backend"}
+
+@app.get("/api/ingest-log")
+def ingest_log_verify():
+    """Handles webhook verification GET requests."""
+    return {"status": "ok", "endpoint": "ready"}
